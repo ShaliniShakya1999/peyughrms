@@ -50,6 +50,9 @@ class CalendarController extends Controller
                 'borderColor'     => '#3b82f6'
             ]);
 
+            
+
+
         // Holidays
         $holidays = Holiday::whereIn('created_by', $companyUserIds)->get()->map(fn($holiday) => [
             'id' => 'holiday-' . $holiday->id,
@@ -121,9 +124,22 @@ class CalendarController extends Controller
 
         $events = $meetings->concat($holidays)->concat($leaves)->concat($autoSaturdays);
 
+        // Only HR + Admin can edit weekoff/working days
+        // Employee ko explicitly exclude karo - sirf view access
+        $isEmployee = $user->type === 'employee' || $user->hasRole('employee');
+        
+        $canEditWeekoff = !$isEmployee && (
+            $user->hasRole('hr')
+            || $user->hasRole('admin')
+            || $user->type === 'admin'
+            || $user->type === 'company'  // Company type users are admins
+            || $user->hasPermissionTo('edit-weekoff')
+            || $user->hasPermissionTo('manage-calendar')  // Users with manage-calendar can edit
+        );
+
         return Inertia::render('calendar/index', [
             'events' => $events,
-            'canManage' => $user->hasPermissionTo('manage-calendar') // only admin true
+            'canEditWeekoff' => $canEditWeekoff,
         ]);
     }
 
@@ -154,30 +170,69 @@ class CalendarController extends Controller
             'borderColor'     => '#22c55e'
         ];
     }
-   public function cancelWeekoff(Request $request)
+public function cancelWeekoff(Request $request)
 {
-    if (!auth()->user()->hasRole('admin')) {
+    $user = auth()->user();
+
+    $isEmployee = $user->type === 'employee' || $user->hasRole('employee');
+    if ($isEmployee) {
+        return response()->json(['message' => 'Forbidden: Employees can only view calendar'], 403);
+    }
+
+    if (
+        !$user->hasRole('hr')
+        && !$user->hasRole('admin')
+        && $user->type !== 'admin'
+        && $user->type !== 'company'
+        && !$user->hasPermissionTo('edit-weekoff')
+        && !$user->hasPermissionTo('manage-calendar')
+    ) {
         return response()->json(['message' => 'Forbidden'], 403);
     }
 
-    CancelledWeekoff::firstOrCreate([
-        'date' => $request->date
-    ], [
-        'created_by' => auth()->id(),
-        'reason' => 'Working Saturday'
+    $request->validate([
+        'date' => 'required|date'
     ]);
 
-    return response()->json(['status' => 'working']);
+    CancelledWeekoff::firstOrCreate(
+        ['date' => $request->date],
+        [
+            'created_by' => auth()->id(),
+            'reason' => 'Working Saturday'
+        ]
+    );
+
+    return response()->json(['status' => 'working', 'message' => 'Weekoff cancelled successfully']);
 }
+
 
 public function restoreWeekoff(Request $request)
 {
-    if (!auth()->user()->hasRole('admin')) {
+    $user = auth()->user();
+
+    // Employee ko explicitly block karo - sirf view access
+    $isEmployee = $user->type === 'employee' || $user->hasRole('employee');
+    if ($isEmployee) {
+        return response()->json(['message' => 'Forbidden: Employees can only view calendar'], 403);
+    }
+
+    // Only HR + Admin can edit weekoff
+    if (!$user->hasRole('hr')
+        && !$user->hasRole('admin')
+        && $user->type !== 'admin'
+        && $user->type !== 'company'  // Company type users are admins
+        && !$user->hasPermissionTo('edit-weekoff')
+        && !$user->hasPermissionTo('manage-calendar')) {  // Users with manage-calendar can edit
         return response()->json(['message' => 'Forbidden'], 403);
     }
 
+    // Validate date
+    $request->validate([
+        'date' => 'required|date'
+    ]);
+
     CancelledWeekoff::where('date', $request->date)->delete();
-    return response()->json(['status' => 'weekoff']);
+    return response()->json(['status' => 'weekoff', 'message' => 'Weekoff restored successfully']);
 }
 
 }

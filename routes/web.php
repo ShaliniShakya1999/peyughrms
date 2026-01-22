@@ -1173,17 +1173,23 @@ Route::middleware(['auth', 'verified', 'setting'])->group(function () {
             ]);
         });
 
-        // Calendar routes
         Route::middleware('permission:view-calendar')->group(function () {
             Route::get('calendar', [\App\Http\Controllers\CalendarController::class, 'index'])->name('calendar.index');
-            Route::post('/calendar/cancel-weekoff', [\App\Http\Controllers\CalendarController::class, 'cancelWeekoff']);
-            Route::post('/calendar/restore-weekoff', [\App\Http\Controllers\CalendarController::class, 'restoreWeekoff']);
         });
-
+        
+        // Weekoff edit routes (HR + Admin only)
+        Route::post('/calendar/cancel-weekoff', [\App\Http\Controllers\CalendarController::class, 'cancelWeekoff'])
+            ->name('calendar.cancel-weekoff');
+        
+        Route::post('/calendar/restore-weekoff', [\App\Http\Controllers\CalendarController::class, 'restoreWeekoff'])
+            ->name('calendar.restore-weekoff');
+        
         // Impersonation routes
         Route::middleware('App\Http\Middleware\SuperAdminMiddleware')->group(function () {
             Route::get('impersonate/{userId}', [ImpersonateController::class, 'start'])->name('impersonate.start');
         });
+
+
 
         Route::post('impersonate/leave', [ImpersonateController::class, 'leave'])->name('impersonate.leave');
     }); // End plan.access middleware group
