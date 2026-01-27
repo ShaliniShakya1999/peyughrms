@@ -7,10 +7,13 @@ use App\Models\AnnouncementView;
 use App\Models\Branch;
 use App\Models\Department;
 use App\Models\User;
+use App\Services\MailConfigService;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Mail;
 use Illuminate\Support\Facades\Storage;
 use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Facades\Log;
 use Inertia\Inertia;
 
 class AnnouncementController extends Controller
@@ -292,6 +295,11 @@ class AnnouncementController extends Controller
                 $announcement->branches()->attach([$request->branch_ids]);
             }
         }
+
+        // Send email notifications to employees
+        // Reload announcement with relationships
+        $announcement->load(['departments', 'branches']);
+        $this->sendAnnouncementEmails($announcement);
 
         return redirect()->back()->with('success', __('Announcement created successfully'));
     }
@@ -608,5 +616,262 @@ class AnnouncementController extends Controller
                 ];
             });
         return response()->json($departments);
+    }
+
+    /**
+     * Send email notifications to employees for the announcement.
+     */
+    private function sendAnnouncementEmails(Announcement $announcement)
+    {
+        try {
+            // Configure SMTP settings before sending emails
+            MailConfigService::setDynamicConfig();
+
+            // Get employees who should receive this announcement
+            $employees = $this->getTargetEmployees($announcement);
+
+            if ($employees->isEmpty()) {
+                Log::info('No employees found to send announcement email', ['announcement_id' => $announcement->id]);
+                return;
+            }
+
+            Log::info('Sending announcement emails', [
+                'announcement_id' => $announcement->id,
+                'total_employees' => $employees->count(),
+                'is_company_wide' => $announcement->is_company_wide
+            ]);
+
+            $fromEmail = getSetting('email_from_address') ?: config('mail.from.address');
+            $fromName = getSetting('email_from_name') ?: config('app.name');
+
+            // Prepare email content
+            $subject = $announcement->is_high_priority 
+                ? '🔴 High Priority: ' . $announcement->title 
+                : '📢 ' . $announcement->title;
+
+            $appUrl = config('app.url');
+            $announcementUrl = $appUrl . '/hr/announcements/' . $announcement->id;
+
+            $successCount = 0;
+            $failureCount = 0;
+
+            // Send email to each employee
+            foreach ($employees as $employee) {
+                try {
+                    // Skip if email is empty or invalid
+                    if (empty($employee->email) || !filter_var($employee->email, FILTER_VALIDATE_EMAIL)) {
+                        Log::warning('Skipping employee with invalid email', [
+                            'announcement_id' => $announcement->id,
+                            'employee_id' => $employee->id,
+                            'employee_email' => $employee->email
+                        ]);
+                        $failureCount++;
+                        continue;
+                    }
+
+                    $emailContent = $this->buildAnnouncementEmailContent($announcement, $employee, $announcementUrl);
+
+                    Mail::send([], [], function ($message) use ($employee, $subject, $emailContent, $fromEmail, $fromName) {
+                        $message->to($employee->email, $employee->name)
+                            ->subject($subject)
+                            ->html($emailContent)
+                            ->from($fromEmail, $fromName);
+                    });
+
+                    $successCount++;
+                    Log::info('Announcement email sent successfully', [
+                        'announcement_id' => $announcement->id,
+                        'employee_id' => $employee->id,
+                        'employee_email' => $employee->email,
+                        'employee_name' => $employee->name
+                    ]);
+                } catch (\Exception $e) {
+                    $failureCount++;
+                    Log::error('Failed to send announcement email to employee', [
+                        'announcement_id' => $announcement->id,
+                        'employee_id' => $employee->id,
+                        'employee_email' => $employee->email,
+                        'employee_name' => $employee->name,
+                        'error' => $e->getMessage(),
+                        'trace' => $e->getTraceAsString()
+                    ]);
+                    // Continue sending to other employees even if one fails
+                }
+            }
+
+            Log::info('Announcement email sending completed', [
+                'announcement_id' => $announcement->id,
+                'total_employees' => $employees->count(),
+                'success_count' => $successCount,
+                'failure_count' => $failureCount
+            ]);
+        } catch (\Exception $e) {
+            Log::error('Failed to send announcement emails', [
+                'announcement_id' => $announcement->id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+        }
+    }
+
+    /**
+     * Get target employees for the announcement based on scope.
+     */
+    private function getTargetEmployees(Announcement $announcement)
+    {
+        $companyUserIds = getCompanyAndUsersId();
+        
+        // Base query for all employees
+        $query = User::where('type', 'employee')
+            ->whereIn('created_by', $companyUserIds)
+            ->where('status', 'active')
+            ->whereNotNull('email')
+            ->where('email', '!=', '');
+
+        // If company-wide, return all employees
+        if ($announcement->is_company_wide) {
+            $employees = $query->get();
+            Log::info('Company-wide announcement - fetching all employees', [
+                'announcement_id' => $announcement->id,
+                'total_employees' => $employees->count()
+            ]);
+            return $employees;
+        }
+
+        // If not company-wide, filter by departments and branches
+        $query->where(function ($q) use ($announcement) {
+            $hasCondition = false;
+
+            // Check if employee belongs to any of the announcement's departments
+            if ($announcement->departments->isNotEmpty()) {
+                $departmentIds = $announcement->departments->pluck('id')->toArray();
+                $q->whereHas('employee', function ($eq) use ($departmentIds) {
+                    $eq->whereIn('department_id', $departmentIds);
+                });
+                $hasCondition = true;
+            }
+
+            // Check if employee belongs to any of the announcement's branches
+            if ($announcement->branches->isNotEmpty()) {
+                $branchIds = $announcement->branches->pluck('id')->toArray();
+                if ($hasCondition) {
+                    $q->orWhereHas('employee', function ($eq) use ($branchIds) {
+                        $eq->whereIn('branch_id', $branchIds);
+                    });
+                } else {
+                    $q->whereHas('employee', function ($eq) use ($branchIds) {
+                        $eq->whereIn('branch_id', $branchIds);
+                    });
+                }
+            }
+        });
+
+        $employees = $query->get();
+        Log::info('Department/Branch specific announcement - fetching filtered employees', [
+            'announcement_id' => $announcement->id,
+            'total_employees' => $employees->count(),
+            'department_ids' => $announcement->departments->pluck('id')->toArray(),
+            'branch_ids' => $announcement->branches->pluck('id')->toArray()
+        ]);
+        
+        return $employees;
+    }
+
+    /**
+     * Build HTML email content for the announcement.
+     */
+    private function buildAnnouncementEmailContent(Announcement $announcement, User $employee, string $announcementUrl): string
+    {
+        $priorityBadge = $announcement->is_high_priority 
+            ? '<span style="background-color: #ef4444; color: white; padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: bold;">HIGH PRIORITY</span>'
+            : '';
+
+        $featuredBadge = $announcement->is_featured 
+            ? '<span style="background-color: #3b82f6; color: white; padding: 4px 8px; border-radius: 4px; font-size: 12px; font-weight: bold;">FEATURED</span>'
+            : '';
+
+        $badges = trim($priorityBadge . ' ' . $featuredBadge);
+
+        $html = '
+        <!DOCTYPE html>
+        <html>
+        <head>
+            <meta charset="utf-8">
+            <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        </head>
+        <body style="font-family: Arial, sans-serif; line-height: 1.6; color: #333; max-width: 600px; margin: 0 auto; padding: 20px;">
+            <div style="background-color: #f8f9fa; padding: 20px; border-radius: 8px; margin-bottom: 20px;">
+                <h1 style="color: #1f2937; margin-top: 0;">' . htmlspecialchars($announcement->title) . '</h1>
+                ' . ($badges ? '<div style="margin-bottom: 15px;">' . $badges . '</div>' : '') . '
+                <p style="color: #6b7280; margin: 10px 0;">
+                    <strong>Category:</strong> ' . htmlspecialchars($announcement->category) . '<br>
+                    <strong>Start Date:</strong> ' . $announcement->start_date->format('F d, Y') . '<br>
+                    ' . ($announcement->end_date ? '<strong>End Date:</strong> ' . $announcement->end_date->format('F d, Y') . '<br>' : '') . '
+                </p>
+            </div>
+
+            ' . ($announcement->description ? '
+            <div style="background-color: #ffffff; padding: 15px; border-left: 4px solid #3b82f6; margin-bottom: 20px;">
+                <div style="margin: 0; font-style: italic; color: #4b5563;">' . $this->cleanHtmlContent($announcement->description) . '</div>
+            </div>
+            ' : '') . '
+
+            <div style="background-color: #ffffff; padding: 20px; border: 1px solid #e5e7eb; border-radius: 8px; margin-bottom: 20px;">
+                <div style="color: #374151;">
+                    ' . $this->cleanHtmlContent($announcement->content) . '
+                </div>
+            </div>
+
+            <div style="text-align: center; margin-top: 30px;">
+                <a href="' . htmlspecialchars($announcementUrl) . '" 
+                   style="display: inline-block; background-color: #3b82f6; color: white; padding: 12px 24px; text-decoration: none; border-radius: 6px; font-weight: bold;">
+                    View Full Announcement
+                </a>
+            </div>
+
+            <div style="margin-top: 30px; padding-top: 20px; border-top: 1px solid #e5e7eb; text-align: center; color: #6b7280; font-size: 12px;">
+                <p>This is an automated notification from ' . htmlspecialchars(config('app.name')) . '</p>
+                <p>You are receiving this because you are an employee in the organization.</p>
+            </div>
+        </body>
+        </html>';
+
+        return $html;
+    }
+
+    /**
+     * Clean and properly format HTML content for email.
+     * Converts HTML tags to proper formatting while preserving structure.
+     */
+    private function cleanHtmlContent($content)
+    {
+        if (empty($content)) {
+            return '';
+        }
+
+        // Remove any script tags and dangerous HTML for security
+        $content = preg_replace('/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/mi', '', $content);
+        $content = preg_replace('/<iframe\b[^<]*(?:(?!<\/iframe>)<[^<]*)*<\/iframe>/mi', '', $content);
+        $content = preg_replace('/on\w+="[^"]*"/i', '', $content);
+        $content = preg_replace('/on\w+=\'[^\']*\'/i', '', $content);
+        $content = preg_replace('/javascript:/i', '', $content);
+
+        // If content already contains HTML tags, use them directly with proper styling
+        if (strip_tags($content) !== $content) {
+            // Content has HTML tags, ensure proper paragraph formatting
+            $content = preg_replace('/<p[^>]*>/i', '<p style="margin: 10px 0; color: #374151; line-height: 1.6;">', $content);
+            $content = preg_replace('/<br\s*\/?>/i', '<br style="line-height: 1.6;">', $content);
+            // Ensure other common tags have proper styling
+            $content = preg_replace('/<strong>/i', '<strong style="font-weight: bold;">', $content);
+            $content = preg_replace('/<b>/i', '<b style="font-weight: bold;">', $content);
+            $content = preg_replace('/<em>/i', '<em style="font-style: italic;">', $content);
+            $content = preg_replace('/<i>/i', '<i style="font-style: italic;">', $content);
+            return $content;
+        } else {
+            // Plain text, convert newlines to <br> and wrap in paragraphs
+            $content = htmlspecialchars($content, ENT_QUOTES, 'UTF-8');
+            $content = nl2br($content);
+            return '<p style="margin: 10px 0; color: #374151; line-height: 1.6;">' . $content . '</p>';
+        }
     }
 }

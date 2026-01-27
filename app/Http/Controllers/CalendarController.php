@@ -122,7 +122,24 @@ class CalendarController extends Controller
             }
         }
 
-        $events = $meetings->concat($holidays)->concat($leaves)->concat($autoSaturdays);
+        // Every Sunday Off Logic (Non-editable)
+        $autoSundays = collect();
+        $year = now()->year;
+        
+        for ($month = 1; $month <= 12; $month++) {
+            $date = Carbon::create($year, $month, 1);
+            
+            while ($date->month == $month) {
+                if ($date->isSunday()) {
+                    $sundayDate = $date->format('Y-m-d');
+                    // Sunday is always off, no edit option
+                    $autoSundays->push($this->sundayWeekoffEvent($sundayDate, 'Sunday'));
+                }
+                $date->addDay();
+            }
+        }
+
+        $events = $meetings->concat($holidays)->concat($leaves)->concat($autoSaturdays)->concat($autoSundays);
 
         // Only HR + Admin can edit weekoff/working days
         // Employee ko explicitly exclude karo - sirf view access
@@ -170,6 +187,21 @@ class CalendarController extends Controller
             'borderColor'     => '#22c55e'
         ];
     }
+
+    private function sundayWeekoffEvent($date, $title)
+    {
+        return [
+            'id' => 'sunday-' . str_replace('-', '', $date),
+            'title' => $title . ' (Week Off)',
+            'start' => $date,
+            'end'   => $date,
+            'type'  => 'sunday-weekoff', // Different type to identify non-editable Sundays
+            'allDay' => true,
+            'backgroundColor' => '#ef4444',
+            'borderColor'     => '#ef4444',
+            'editable' => false // Flag to prevent editing in frontend
+        ];
+    }
 public function cancelWeekoff(Request $request)
 {
     $user = auth()->user();
@@ -193,6 +225,12 @@ public function cancelWeekoff(Request $request)
     $request->validate([
         'date' => 'required|date'
     ]);
+
+    // Prevent editing Sundays - they are always off
+    $date = Carbon::parse($request->date);
+    if ($date->isSunday()) {
+        return response()->json(['message' => 'Sundays are always off and cannot be edited'], 403);
+    }
 
     CancelledWeekoff::firstOrCreate(
         ['date' => $request->date],
@@ -230,6 +268,12 @@ public function restoreWeekoff(Request $request)
     $request->validate([
         'date' => 'required|date'
     ]);
+
+    // Prevent editing Sundays - they are always off
+    $date = Carbon::parse($request->date);
+    if ($date->isSunday()) {
+        return response()->json(['message' => 'Sundays are always off and cannot be edited'], 403);
+    }
 
     CancelledWeekoff::where('date', $request->date)->delete();
     return response()->json(['status' => 'weekoff', 'message' => 'Weekoff restored successfully']);

@@ -15,8 +15,9 @@ interface CalendarEvent {
     title: string;
     start: string | Date;
     end: string | Date;
-    type: 'meeting' | 'holiday' | 'leave' | 'weekoff' | 'working';
+    type: 'meeting' | 'holiday' | 'leave' | 'weekoff' | 'working' | 'sunday-weekoff';
     allDay?: boolean;
+    editable?: boolean;
 }
 
 interface CalendarProps {
@@ -42,6 +43,12 @@ export default function CalendarIndex({ events, canEditWeekoff }: CalendarProps)
         // Double check - Employee ko edit allow mat karo
         if (!canEditWeekoff || !selectedEvent) {
             alert('You do not have permission to edit weekoff days.');
+            return;
+        }
+
+        // Sunday weekoffs are non-editable
+        if (selectedEvent.type === 'sunday-weekoff') {
+            alert('Sundays are always off and cannot be edited.');
             return;
         }
 
@@ -82,6 +89,9 @@ export default function CalendarIndex({ events, canEditWeekoff }: CalendarProps)
                     <div className="flex items-center gap-2 text-sm">
                         <div className="h-3 w-3 rounded bg-red-500"></div> {t('Week Off (2nd & 4th Saturday)')}
                     </div>
+                    <div className="flex items-center gap-2 text-sm">
+                        <div className="h-3 w-3 rounded bg-red-500"></div> {t('Sunday (Week Off)')}
+                    </div>
                 </div>
 
                 <div style={{ height: '600px' }}>
@@ -110,6 +120,7 @@ export default function CalendarIndex({ events, canEditWeekoff }: CalendarProps)
                     <div className="space-y-4">
                         <Badge>
                             {selectedEvent?.type === 'weekoff' && t('Week Off')}
+                            {selectedEvent?.type === 'sunday-weekoff' && t('Sunday (Week Off)')}
                             {selectedEvent?.type === 'working' && t('Working Day')}
                             {selectedEvent?.type === 'holiday' && t('Holiday')}
                             {selectedEvent?.type === 'leave' && t('Leave')}
@@ -123,8 +134,8 @@ export default function CalendarIndex({ events, canEditWeekoff }: CalendarProps)
                             </p>
                         </div>
 
-                        {/* Edit buttons only for HR/Admin */}
-                        {canEditWeekoff && selectedEvent?.type === 'weekoff' && (
+                        {/* Edit buttons only for HR/Admin - NOT for Sundays */}
+                        {canEditWeekoff && selectedEvent?.type === 'weekoff' && selectedEvent?.type !== 'sunday-weekoff' && (
                             <button
                                 className="w-full rounded bg-red-600 py-2 text-white hover:bg-red-700"
                                 onClick={() => toggleWeekoff(true)}
@@ -142,8 +153,15 @@ export default function CalendarIndex({ events, canEditWeekoff }: CalendarProps)
                             </button>
                         )}
 
+                        {/* Sunday is always off - no edit option for anyone */}
+                        {selectedEvent?.type === 'sunday-weekoff' && (
+                            <p className="text-sm text-muted-foreground text-center">
+                                {t('Sundays are always off and cannot be edited.')}
+                            </p>
+                        )}
+
                         {/* Read-only message for Employee/User */}
-                        {!canEditWeekoff && (selectedEvent?.type === 'weekoff' || selectedEvent?.type === 'working') && (
+                        {!canEditWeekoff && (selectedEvent?.type === 'weekoff' || selectedEvent?.type === 'working') && selectedEvent?.type !== 'sunday-weekoff' && (
                             <p className="text-sm text-muted-foreground text-center">
                                 {t('You can view this information but cannot make changes.')}
                             </p>
