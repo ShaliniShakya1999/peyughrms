@@ -357,6 +357,14 @@ export default function AttendanceRecords() {
                 );
             },
         },
+        {
+            key: 'ip_address',
+            label: t('IP Address'),
+            sortable: true,
+            render: (value: string) => (
+                <span className="font-mono text-sm text-gray-600">{value || '-'}</span>
+            ),
+        },
     ];
 
     // Define table actions

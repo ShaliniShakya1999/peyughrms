@@ -7,7 +7,7 @@ import { useSidebarSettings } from '@/contexts/SidebarContext';
 import { useBrand } from '@/contexts/BrandContext';
 import { type NavItem } from '@/types';
 import { Link, usePage, router } from '@inertiajs/react';
-import { BookOpen, Folder, LayoutGrid, ShoppingBag, Users, Tag, FileIcon, Settings, BarChart, Barcode, FileText, Briefcase, CheckSquare, Calendar, CreditCard, Ticket, Gift, IndianRupee, DollarSign, MessageSquare, CalendarDays, Palette, Image, Mail, Mail as VCard, ChevronDown, Building2, Globe, Clock, Timer, Coins } from 'lucide-react';
+import { BookOpen, Folder, LayoutGrid, ShoppingBag, Users, Tag, FileIcon, Settings, BarChart, Barcode, FileText, Briefcase, CheckSquare, Calendar, CreditCard, Ticket, Gift, IndianRupee, DollarSign, MessageSquare, CalendarDays, Palette, Image, Mail, Mail as VCard, ChevronDown, Building2, Globe, Clock, Timer, Coins, Activity } from 'lucide-react';
 import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
 import { Button } from '@/components/ui/button';
 import AppLogo from './app-logo';
@@ -101,6 +101,11 @@ export function AppSidebar() {
                     // icon: Mail,
                 },
             ]
+        },
+        {
+            title: t('Activity Logs'),
+            href: route('admin.activity-logs.index'),
+            icon: Activity,
         },
         {
             title: t('Settings'),
@@ -901,6 +906,15 @@ export function AppSidebar() {
                         href: route('email-templates.index')
                     }
                 ]
+            });
+        }
+
+        // Activity Logs - only for admin and company users
+        if (userRole === 'admin' || userRole === 'company') {
+            items.push({
+                title: t('Activity Logs'),
+                href: route('admin.activity-logs.index'),
+                icon: Activity,
             });
         }
 

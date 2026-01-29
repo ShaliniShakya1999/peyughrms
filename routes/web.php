@@ -81,6 +81,7 @@ use App\Http\Controllers\GoalTypeController;
 use App\Http\Controllers\EmployeeGoalController;
 use App\Http\Controllers\ReviewCycleController;
 use App\Http\Controllers\EmployeeReviewController;
+use App\Http\Controllers\ActivityLogController;
 use Illuminate\Support\Facades\Route;
 use Inertia\Inertia;
 
@@ -1184,6 +1185,9 @@ Route::middleware(['auth', 'verified', 'setting'])->group(function () {
         Route::post('/calendar/restore-weekoff', [\App\Http\Controllers\CalendarController::class, 'restoreWeekoff'])
             ->name('calendar.restore-weekoff');
         
+        // Activity Logs routes (Admin only)
+        Route::get('admin/activity-logs', [ActivityLogController::class, 'index'])->name('admin.activity-logs.index');
+
         // Impersonation routes
         Route::middleware('App\Http\Middleware\SuperAdminMiddleware')->group(function () {
             Route::get('impersonate/{userId}', [ImpersonateController::class, 'start'])->name('impersonate.start');

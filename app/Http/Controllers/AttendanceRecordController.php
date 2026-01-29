@@ -6,6 +6,7 @@ use App\Models\AttendanceRecord;
 use App\Models\Shift;
 use App\Models\AttendancePolicy;
 use App\Models\User;
+use App\Helpers\ActivityLogHelper;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Inertia\Inertia;
@@ -124,12 +125,18 @@ class AttendanceRecordController extends Controller
 
         // Set weekend flag
         $validated['is_weekend'] = Carbon::parse($validated['date'])->isWeekend();
+        
+        // Capture IP address
+        $validated['ip_address'] = $request->ip() ?? '0.0.0.0';
 
         $record = AttendanceRecord::create($validated);
 
         // Process complete attendance calculation
         $record->fresh(); // Reload to get relationships
         $record->processAttendance();
+
+        // Log activity
+        ActivityLogHelper::logAttendanceCreated();
 
         return redirect()->back()->with('success', __('Attendance record created successfully.'));
     }
@@ -182,12 +189,18 @@ class AttendanceRecordController extends Controller
 
                 // Set weekend flag
                 $validated['is_weekend'] = Carbon::parse($validated['date'])->isWeekend();
+                
+                // Capture IP address on update
+                $validated['ip_address'] = $request->ip() ?? '0.0.0.0';
 
                 $attendanceRecord->update($validated);
 
                 // Process complete attendance calculation
                 $attendanceRecord->fresh(); // Reload to get relationships
                 $attendanceRecord->processAttendance();
+
+                // Log activity
+                ActivityLogHelper::logAttendanceUpdated();
 
                 return redirect()->back()->with('success', __('Attendance record updated successfully'));
             } catch (\Exception $e) {
@@ -206,6 +219,9 @@ class AttendanceRecordController extends Controller
 
         if ($attendanceRecord) {
             try {
+                // Log activity before deletion
+                ActivityLogHelper::logAttendanceDeleted();
+                
                 $attendanceRecord->delete();
                 return redirect()->back()->with('success', __('Attendance record deleted successfully'));
             } catch (\Exception $e) {
@@ -256,12 +272,15 @@ class AttendanceRecordController extends Controller
                 return redirect()->back()->with('error', __('No active shift or attendance policy found. Please contact HR.'));
             }
 
+            $ipAddress = $request->ip() ?? '0.0.0.0';
+            
             if ($existingRecord) {
                 $existingRecord->update([
                     'clock_in' => $now->format('H:i:s'),
                     'shift_id' => $shift->id,
                     'attendance_policy_id' => $policy->id,
                     'status' => 'present',
+                    'ip_address' => $ipAddress,
                 ]);
                 $record = $existingRecord;
             } else {
@@ -273,6 +292,7 @@ class AttendanceRecordController extends Controller
                     'attendance_policy_id' => $policy->id,
                     'is_weekend' => $today->isWeekend(),
                     'status' => 'present',
+                    'ip_address' => $ipAddress,
                     'created_by' => creatorId(),
                 ]);
             }
@@ -282,6 +302,9 @@ class AttendanceRecordController extends Controller
                 $record->checkLateArrival();
                 $record->save();
             }
+
+            // Log activity - use the employee_id from request
+            ActivityLogHelper::logClockIn($validated['employee_id']);
 
             return redirect()->back()->with('success', __('Clocked in successfully.'));
         } catch (\Exception $e) {
@@ -312,14 +335,20 @@ class AttendanceRecordController extends Controller
                 return redirect()->back()->with('error', __('Already clocked out today.'));
             }
 
+            $ipAddress = $request->ip() ?? '0.0.0.0';
+            
             $record->update([
                 'clock_out' => $now->format('H:i:s'),
+                'ip_address' => $ipAddress, // Update IP on clock out as well
             ]);
 
             // Process complete attendance calculation if method exists
             if (method_exists($record, 'processAttendance')) {
                 $record->processAttendance();
             }
+
+            // Log activity - use the employee_id from request
+            ActivityLogHelper::logClockOut($validated['employee_id']);
 
             return redirect()->back()->with('success', __('Clocked out successfully.'));
         } catch (\Exception $e) {

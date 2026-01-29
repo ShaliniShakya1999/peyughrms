@@ -2,6 +2,7 @@
 
 namespace App\Http\Controllers\Auth;
 
+use App\Helpers\ActivityLogHelper;
 use App\Http\Controllers\Controller;
 use App\Http\Requests\Auth\LoginRequest;
 use Illuminate\Http\RedirectResponse;
@@ -41,6 +42,9 @@ class AuthenticatedSessionController extends Controller
 
         $request->session()->regenerate();
 
+        // Activity log: login
+        ActivityLogHelper::logLogin($request->user()?->id);
+
         // Check if email verification is enabled and user is not verified
         $emailVerificationEnabled = getSetting('emailVerification', false);
         if ($emailVerificationEnabled && !$request->user()->hasVerifiedEmail()) {
@@ -55,6 +59,10 @@ class AuthenticatedSessionController extends Controller
      */
     public function destroy(Request $request): RedirectResponse
     {
+        // Activity log: logout (capture user id before logout)
+        $userId = Auth::id();
+        ActivityLogHelper::logLogout($userId);
+
         Auth::guard('web')->logout();
 
         $request->session()->invalidate();

@@ -5,8 +5,8 @@ namespace App\Http\Controllers;
 use App\Models\Candidate;
 use App\Models\JobPosting;
 use App\Models\CandidateSource;
-
 use App\Models\User;
+use App\Helpers\ActivityLogHelper;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 use Inertia\Inertia;
@@ -161,6 +161,9 @@ class CandidateController extends Controller
             'expected_salary', 'notice_period', 'skills', 'education', 'portfolio_url',
             'linkedin_url', 'referral_employee_id', 'application_date'
         ]));
+
+        // Log activity
+        ActivityLogHelper::logCandidateUpdated();
 
         return redirect()->back()->with('success', __('Candidate updated successfully'));
     }

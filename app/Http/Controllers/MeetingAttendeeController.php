@@ -5,6 +5,7 @@ namespace App\Http\Controllers;
 use App\Models\MeetingAttendee;
 use App\Models\Meeting;
 use App\Models\User;
+use App\Helpers\ActivityLogHelper;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 use Inertia\Inertia;
@@ -178,6 +179,11 @@ class MeetingAttendeeController extends Controller
             'attendance_status' => $request->attendance_status,
         ]);
 
+        // Log meeting attendance if status is Present
+        if ($request->attendance_status === 'Present') {
+            ActivityLogHelper::logMeetingAttended($meetingAttendee->user_id);
+        }
+
         return redirect()->back()->with('success', __('Attendance updated successfully'));
     }
 
@@ -222,6 +228,11 @@ class MeetingAttendeeController extends Controller
         $meetingAttendee->update([
             'attendance_status' => $request->attendance_status,
         ]);
+
+        // Log meeting attendance if status is Present
+        if ($request->attendance_status === 'Present') {
+            ActivityLogHelper::logMeetingAttended($meetingAttendee->user_id);
+        }
 
         return redirect()->back()->with('success', __('Attendance updated successfully'));
     }

@@ -8,6 +8,7 @@ use App\Models\Branch;
 use App\Models\Department;
 use App\Models\User;
 use App\Services\MailConfigService;
+use App\Helpers\ActivityLogHelper;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Illuminate\Support\Facades\Mail;
@@ -301,6 +302,9 @@ class AnnouncementController extends Controller
         $announcement->load(['departments', 'branches']);
         $this->sendAnnouncementEmails($announcement);
 
+        // Log activity
+        ActivityLogHelper::logAnnouncementCreated();
+
         return redirect()->back()->with('success', __('Announcement created successfully'));
     }
 
@@ -447,6 +451,9 @@ class AnnouncementController extends Controller
             }
         }
 
+        // Log activity
+        ActivityLogHelper::logAnnouncementUpdated();
+
         return redirect()->back()->with('success', __('Announcement updated successfully'));
     }
 
@@ -466,6 +473,9 @@ class AnnouncementController extends Controller
 
         // Delete all views
         $announcement->viewedBy()->detach();
+
+        // Log activity before deletion
+        ActivityLogHelper::logAnnouncementDeleted();
 
         // Delete the announcement
         $announcement->delete();

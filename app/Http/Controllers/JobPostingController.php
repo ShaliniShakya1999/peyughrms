@@ -7,6 +7,7 @@ use App\Models\JobRequisition;
 use App\Models\JobType;
 use App\Models\JobLocation;
 use App\Models\Department;
+use App\Helpers\ActivityLogHelper;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Validator;
 use Inertia\Inertia;
@@ -115,6 +116,9 @@ class JobPostingController extends Controller
             'created_by' => creatorId(),
         ]);
 
+        // Log activity
+        ActivityLogHelper::logJobPostingCreated();
+
         return redirect()->back()->with('success', __('Job posting created successfully'));
     }
 
@@ -164,6 +168,9 @@ class JobPostingController extends Controller
             return redirect()->back()->with('error', __('Cannot delete job posting as it has associated candidates'));
         }
 
+        // Log activity before deletion
+        ActivityLogHelper::logJobPostingDeleted();
+        
         $jobPosting->delete();
         return redirect()->back()->with('success', __('Job posting deleted successfully'));
     }

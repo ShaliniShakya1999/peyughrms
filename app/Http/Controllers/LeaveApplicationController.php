@@ -6,6 +6,7 @@ use App\Models\LeaveApplication;
 use App\Models\LeaveType;
 use App\Models\LeavePolicy;
 use App\Models\User;
+use App\Helpers\ActivityLogHelper;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Auth;
 use Inertia\Inertia;
@@ -160,6 +161,9 @@ class LeaveApplicationController extends Controller
             $leaveApplication->createAttendanceRecords();
         }
 
+        // Log activity - use employee_id from request
+        ActivityLogHelper::logLeaveCreated($validated['employee_id']);
+
         return redirect()->back()->with('success', __('Leave application created successfully.'));
     }
 
@@ -204,6 +208,9 @@ class LeaveApplicationController extends Controller
 
                 $leaveApplication->update($validated);
 
+                // Log activity
+                ActivityLogHelper::logLeaveUpdated();
+
                 return redirect()->back()->with('success', __('Leave application updated successfully'));
             } catch (\Exception $e) {
                 return redirect()->back()->with('error', $e->getMessage() ?: __('Failed to update leave application'));
@@ -221,6 +228,9 @@ class LeaveApplicationController extends Controller
 
         if ($leaveApplication) {
             try {
+                // Log activity before deletion
+                ActivityLogHelper::logLeaveCancelled();
+                
                 $leaveApplication->delete();
                 return redirect()->back()->with('success', __('Leave application deleted successfully'));
             } catch (\Exception $e) {
@@ -270,6 +280,12 @@ class LeaveApplicationController extends Controller
                     }
 
                     $leaveApplication->createAttendanceRecords();
+                    
+                    // Log approval
+                    ActivityLogHelper::logLeaveApproved();
+                } else {
+                    // Log rejection
+                    ActivityLogHelper::logLeaveRejected();
                 }
 
                 return redirect()->back()->with('success', __('Leave application status updated successfully'));

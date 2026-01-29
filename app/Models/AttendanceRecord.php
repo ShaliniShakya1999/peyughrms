@@ -28,6 +28,7 @@ class AttendanceRecord extends BaseModel
         'is_weekend',
         'status',
         'notes',
+        'ip_address',
         'created_by'
     ];
 
