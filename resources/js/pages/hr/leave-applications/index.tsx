@@ -86,6 +86,9 @@ export default function LeaveApplications() {
       case 'delete':
         setIsDeleteModalOpen(true);
         break;
+      case 'first-approve':
+        handleStatusUpdate(item, 'manager_approved');
+        break;
       case 'approve':
         handleStatusUpdate(item, 'approved');
         break;
@@ -174,12 +177,16 @@ export default function LeaveApplications() {
   };
 
   const handleStatusUpdate = (application: any, status: string) => {
-    const statusText = status === 'approved' ? t('Approving') : t('Rejecting');
-    toast.loading(`${statusText} leave application...`);
+    const statusLabels: Record<string, string> = {
+      manager_approved: t('First approving'),
+      approved: t('Final approving'),
+      rejected: t('Rejecting')
+    };
+    toast.loading(`${statusLabels[status] || status} leave application...`);
 
     router.put(route('hr.leave-applications.update-status', application.id), { 
       status,
-      manager_comments: '' // Add empty manager_comments to avoid undefined key error
+      manager_comments: ''
     }, {
       onSuccess: (page) => {
         toast.dismiss();
@@ -278,14 +285,21 @@ export default function LeaveApplications() {
       key: 'status',
       label: t('Status'),
       render: (value: string) => {
-        const statusColors = {
+        const statusColors: Record<string, string> = {
           pending: 'bg-yellow-50 text-yellow-700 ring-yellow-600/20',
+          manager_approved: 'bg-blue-50 text-blue-700 ring-blue-600/20',
           approved: 'bg-green-50 text-green-700 ring-green-600/20',
           rejected: 'bg-red-50 text-red-700 ring-red-600/20'
         };
+        const statusLabels: Record<string, string> = {
+          pending: t('Pending'),
+          manager_approved: t('Pending Admin'),
+          approved: t('Approved'),
+          rejected: t('Rejected')
+        };
         return (
-          <span className={`inline-flex items-center rounded-md px-2 py-1 text-xs font-medium ring-1 ring-inset ${statusColors[value as keyof typeof statusColors]}`}>
-            {t(value)}
+          <span className={`inline-flex items-center rounded-md px-2 py-1 text-xs font-medium ring-1 ring-inset ${statusColors[value] || statusColors.pending}`}>
+            {statusLabels[value] || value}
           </span>
         );
       }
@@ -298,7 +312,7 @@ export default function LeaveApplications() {
     }
   ];
 
-  // Define table actions
+  // Define table actions (two-level approval: Manager/HR first → Admin final)
   const actions = [
     {
       label: t('View'),
@@ -316,12 +330,20 @@ export default function LeaveApplications() {
       condition: (item: any) => item.status === 'pending'
     },
     {
-      label: t('Approve'),
+      label: t('First Approve (Manager/HR)'),
+      icon: 'CheckCircle',
+      action: 'first-approve',
+      className: 'text-green-500',
+      requiredPermission: 'first-approve-leave-applications',
+      condition: (item: any) => item.status === 'pending'
+    },
+    {
+      label: t('Final Approve (Admin)'),
       icon: 'CheckCircle',
       action: 'approve',
-      className: 'text-green-500',
-      requiredPermission: 'approve-leave-applications',
-      condition: (item: any) => item.status === 'pending'
+      className: 'text-green-600',
+      requiredPermission: 'final-approve-leave-applications',
+      condition: (item: any) => item.status === 'manager_approved'
     },
     {
       label: t('Reject'),
@@ -329,7 +351,7 @@ export default function LeaveApplications() {
       action: 'reject',
       className: 'text-red-500',
       requiredPermission: 'reject-leave-applications',
-      condition: (item: any) => item.status === 'pending'
+      condition: (item: any) => item.status === 'pending' || item.status === 'manager_approved'
     },
     {
       label: t('Delete'),
@@ -360,6 +382,7 @@ export default function LeaveApplications() {
   const statusOptions = [
     { value: 'all', label: t('All Statuses') },
     { value: 'pending', label: t('Pending') },
+    { value: 'manager_approved', label: t('Pending Admin') },
     { value: 'approved', label: t('Approved') },
     { value: 'rejected', label: t('Rejected') }
   ];

@@ -17,7 +17,7 @@ class LeaveApplicationController extends Controller
     public function index(Request $request)
     {
         $query = LeaveApplication::withPermissionCheck()
-            ->with(['employee', 'leaveType', 'leavePolicy', 'approver', 'creator']);
+            ->with(['employee', 'leaveType', 'leavePolicy', 'firstApprover', 'approver', 'creator']);
 
         // Handle search
         if ($request->has('search') && !empty($request->search)) {
@@ -244,7 +244,7 @@ class LeaveApplicationController extends Controller
     public function updateStatus(Request $request, $leaveApplicationId)
     {
         $validated = $request->validate([
-            'status' => 'required|in:approved,rejected',
+            'status' => 'required|in:manager_approved,approved,rejected',
             'manager_comments' => 'nullable|string',
         ]);
 
@@ -252,18 +252,52 @@ class LeaveApplicationController extends Controller
             ->whereIn('created_by', getCompanyAndUsersId())
             ->first();
 
-        if ($leaveApplication) {
-            try {
-                $leaveApplication->update([
-                    'status' => $validated['status'],
-                    'manager_comments' => $validated['manager_comments'],
-                    'approved_by' => Auth::id(),
-                    'approved_at' => now(),
-                ]);
+        if (!$leaveApplication) {
+            return redirect()->back()->with('error', __('Leave application Not Found.'));
+        }
 
-                // Create attendance records if approved
-                if ($validated['status'] === 'approved') {
-                    // Double-check balance before final approval
+        $user = Auth::user();
+        $currentStatus = $leaveApplication->status;
+        $newStatus = $validated['status'];
+
+        try {
+            // --- Level 1: Pending → Manager/HR approve or reject ---
+            if ($currentStatus === 'pending') {
+                if ($newStatus === 'manager_approved') {
+                    if (!$user->can('first-approve-leave-applications')) {
+                        return redirect()->back()->with('error', __('You do not have permission to do first-level approval.'));
+                    }
+                    $leaveApplication->update([
+                        'status' => 'manager_approved',
+                        'manager_comments' => $validated['manager_comments'],
+                        'first_approved_by' => $user->id,
+                        'first_approved_at' => now(),
+                    ]);
+                    ActivityLogHelper::logLeaveApproved();
+                    return redirect()->back()->with('success', __('Leave application approved at first level. Pending admin approval.'));
+                }
+
+                if ($newStatus === 'rejected') {
+                    if (!$user->can('reject-leave-applications')) {
+                        return redirect()->back()->with('error', __('You do not have permission to reject leave applications.'));
+                    }
+                    $leaveApplication->update([
+                        'status' => 'rejected',
+                        'manager_comments' => $validated['manager_comments'],
+                    ]);
+                    ActivityLogHelper::logLeaveRejected();
+                    return redirect()->back()->with('success', __('Leave application rejected.'));
+                }
+
+                return redirect()->back()->with('error', __('Invalid status for current leave state.'));
+            }
+
+            // --- Level 2: Manager approved → Admin final approve or reject ---
+            if ($currentStatus === 'manager_approved') {
+                if ($newStatus === 'approved') {
+                    if (!$user->can('final-approve-leave-applications')) {
+                        return redirect()->back()->with('error', __('You do not have permission to do final approval.'));
+                    }
                     $currentYear = now()->year;
                     $leaveBalance = \App\Models\LeaveBalance::where('employee_id', $leaveApplication->employee_id)
                         ->where('leave_type_id', $leaveApplication->leave_type_id)
@@ -271,7 +305,7 @@ class LeaveApplicationController extends Controller
                         ->first();
 
                     if ($leaveBalance && $leaveBalance->remaining_days < $leaveApplication->total_days) {
-                        return redirect()->back()->with('error', 
+                        return redirect()->back()->with('error',
                             __('Cannot approve: Insufficient leave balance. Available: :available days, Required: :required days', [
                                 'available' => $leaveBalance->remaining_days,
                                 'required' => $leaveApplication->total_days
@@ -279,21 +313,37 @@ class LeaveApplicationController extends Controller
                         );
                     }
 
+                    $leaveApplication->update([
+                        'status' => 'approved',
+                        'manager_comments' => $validated['manager_comments'],
+                        'approved_by' => $user->id,
+                        'approved_at' => now(),
+                    ]);
                     $leaveApplication->createAttendanceRecords();
-                    
-                    // Log approval
                     ActivityLogHelper::logLeaveApproved();
-                } else {
-                    // Log rejection
-                    ActivityLogHelper::logLeaveRejected();
+                    return redirect()->back()->with('success', __('Leave application finally approved.'));
                 }
 
-                return redirect()->back()->with('success', __('Leave application status updated successfully'));
-            } catch (\Exception $e) {
-                return redirect()->back()->with('error', $e->getMessage() ?: __('Failed to update leave application status'));
+                if ($newStatus === 'rejected') {
+                    if (!$user->can('final-approve-leave-applications') && !$user->can('reject-leave-applications')) {
+                        return redirect()->back()->with('error', __('You do not have permission to reject this leave.'));
+                    }
+                    $leaveApplication->update([
+                        'status' => 'rejected',
+                        'manager_comments' => $validated['manager_comments'],
+                        'approved_by' => $user->id,
+                        'approved_at' => now(),
+                    ]);
+                    ActivityLogHelper::logLeaveRejected();
+                    return redirect()->back()->with('success', __('Leave application rejected by admin.'));
+                }
+
+                return redirect()->back()->with('error', __('Invalid status for current leave state.'));
             }
-        } else {
-            return redirect()->back()->with('error', __('Leave application Not Found.'));
+
+            return redirect()->back()->with('error', __('Leave application is not in a state that can be updated.'));
+        } catch (\Exception $e) {
+            return redirect()->back()->with('error', $e->getMessage() ?: __('Failed to update leave application status'));
         }
     }
 }

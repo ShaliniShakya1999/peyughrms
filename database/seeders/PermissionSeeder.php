@@ -770,6 +770,8 @@ class PermissionSeeder extends Seeder
             ['name' => 'edit-leave-applications', 'module' => 'leave_applications', 'label' => 'Edit Leave Applications', 'description' => 'Can edit leave applications'],
             ['name' => 'delete-leave-applications', 'module' => 'leave_applications', 'label' => 'Delete Leave Applications', 'description' => 'Can delete leave applications'],
             ['name' => 'approve-leave-applications', 'module' => 'leave_applications', 'label' => 'Approve Leave Applications', 'description' => 'Can approve leave applications'],
+            ['name' => 'first-approve-leave-applications', 'module' => 'leave_applications', 'label' => 'First Approve Leave (Manager/HR)', 'description' => 'Can do first-level approval (pending → manager approved)'],
+            ['name' => 'final-approve-leave-applications', 'module' => 'leave_applications', 'label' => 'Final Approve Leave (Admin)', 'description' => 'Can do final approval (manager approved → approved)'],
             ['name' => 'reject-leave-applications', 'module' => 'leave_applications', 'label' => 'Reject Leave Applications', 'description' => 'Can reject leave applications'],
 
             // Leave Balances management

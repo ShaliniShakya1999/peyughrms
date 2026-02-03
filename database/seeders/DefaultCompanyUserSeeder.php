@@ -937,7 +937,7 @@ class DefaultCompanyUserSeeder extends Seeder
             'create-leave-applications',
             'edit-leave-applications',
             'delete-leave-applications',
-            'approve-leave-applications',
+            'first-approve-leave-applications',
             'reject-leave-applications',
 
             // Leave Balances management

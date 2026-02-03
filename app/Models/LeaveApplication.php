@@ -20,6 +20,8 @@ class LeaveApplication extends BaseModel
         'attachment',
         'status',
         'manager_comments',
+        'first_approved_by',
+        'first_approved_at',
         'approved_by',
         'approved_at',
         'created_by'
@@ -28,6 +30,7 @@ class LeaveApplication extends BaseModel
     protected $casts = [
         'start_date' => 'date',
         'end_date' => 'date',
+        'first_approved_at' => 'datetime',
         'approved_at' => 'datetime',
     ];
 
@@ -56,7 +59,15 @@ class LeaveApplication extends BaseModel
     }
 
     /**
-     * Get the manager who approved/rejected.
+     * Get the user who did first-level approval (Manager/HR).
+     */
+    public function firstApprover()
+    {
+        return $this->belongsTo(User::class, 'first_approved_by');
+    }
+
+    /**
+     * Get the admin who did final approval.
      */
     public function approver()
     {

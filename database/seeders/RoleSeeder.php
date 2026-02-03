@@ -569,6 +569,7 @@ class RoleSeeder extends Seeder
             'edit-leave-applications',
             'delete-leave-applications',
             'approve-leave-applications',
+            'final-approve-leave-applications',
             'reject-leave-applications',
             'manage-leave-balances',
             'manage-any-leave-balances',
